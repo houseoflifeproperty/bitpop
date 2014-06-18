@@ -323,8 +323,34 @@ bool ResourceMetadataStorage::UpgradeOldDB(
   UMA_HISTOGRAM_SPARSE_SLOWLY("Drive.MetadataDBVersionBeforeUpgradeCheck",
                               header.version());
 
-  if (header.version() == kDBVersion) {  // Nothing to do.
-    return true;
+  if (header.version() == kDBVersion) {
+    // Before r272134, UpgradeOldDB() was not deleting unused ID entries.
+    // Delete unused ID entries to fix crbug.com/374648.
+    std::set<std::string> used_ids;
+
+    scoped_ptr<leveldb::Iterator> it(
+        resource_map->NewIterator(leveldb::ReadOptions()));
+    it->Seek(leveldb::Slice(GetHeaderDBKey()));
+    it->Next();
+    for (; it->Valid(); it->Next()) {
+      if (IsCacheEntryKey(it->key())) {
+        used_ids.insert(GetIdFromCacheEntryKey(it->key()));
+      } else if (!IsChildEntryKey(it->key()) && !IsIdEntryKey(it->key())) {
+        used_ids.insert(it->key().ToString());
+      }
+    }
+    if (!it->status().ok())
+      return false;
+
+    leveldb::WriteBatch batch;
+    for (it->SeekToFirst(); it->Valid(); it->Next()) {
+      if (IsIdEntryKey(it->key()) && !used_ids.count(it->value().ToString()))
+        batch.Delete(it->key());
+    }
+    if (!it->status().ok())
+      return false;
+
+    return resource_map->Write(leveldb::WriteOptions(), &batch).ok();
   } else if (header.version() < 6) {  // Too old, nothing can be done.
     return false;
   } else if (header.version() < 11) {  // Cache entries can be reused.
@@ -365,9 +391,22 @@ bool ResourceMetadataStorage::UpgradeOldDB(
     options.verify_checksums = true;
     scoped_ptr<leveldb::Iterator> it(resource_map->NewIterator(options));
 
+    // First, get the set of local IDs associated with cache entries.
+    std::set<std::string> cached_entry_ids;
+    for (it->SeekToFirst(); it->Valid(); it->Next()) {
+      if (IsCacheEntryKey(it->key()))
+        cached_entry_ids.insert(GetIdFromCacheEntryKey(it->key()));
+    }
+    if (!it->status().ok())
+      return false;
+
+    // Delete all entries except cache entries and IDs.
     leveldb::WriteBatch batch;
     for (it->SeekToFirst(); it->Valid(); it->Next()) {
-      if (!IsCacheEntryKey(it->key()) && !IsIdEntryKey(it->key()))
+      const bool is_cache = IsCacheEntryKey(it->key());
+      const bool is_used_id = IsIdEntryKey(it->key()) &&
+          cached_entry_ids.count(it->value().ToString());
+      if (!is_cache && !is_used_id)
         batch.Delete(it->key());
     }
     if (!it->status().ok())

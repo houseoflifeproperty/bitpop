@@ -74,8 +74,6 @@
       }],
     ],
 
-    'ffmpeg_variant%': '<(target_arch)',
-
     'build_ffmpegsumo%': 1,
 
     # Locations for generated artifacts.
@@ -181,6 +179,7 @@
             ['clang == 1', {
               'xcode_settings': {
                 'WARNING_CFLAGS': [
+                  '-Wno-absolute-value',
                   # ffmpeg uses its own deprecated functions.
                   '-Wno-deprecated-declarations',
                   # ffmpeg doesn't care about pointer constness.
@@ -194,6 +193,7 @@
                 ],
               },
               'cflags': [
+                '-Wno-absolute-value',
                 '-Wno-deprecated-declarations',
                 '-Wno-incompatible-pointer-types',
                 '-Wno-logical-op-parentheses',

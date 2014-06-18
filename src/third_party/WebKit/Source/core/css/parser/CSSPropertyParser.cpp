@@ -158,13 +158,14 @@ private:
 
 CSSPropertyParser::CSSPropertyParser(OwnPtr<CSSParserValueList>& valueList,
     const CSSParserContext& context, bool inViewport, bool savedImportant,
-    WillBeHeapVector<CSSProperty, 256>& parsedProperties, bool& hasFontFaceOnlyValues)
+    WillBeHeapVector<CSSProperty, 256>& parsedProperties,
+    CSSRuleSourceData::Type ruleType)
     : m_valueList(valueList)
     , m_context(context)
     , m_inViewport(inViewport)
     , m_important(savedImportant) // See comment in header, should be removed.
     , m_parsedProperties(parsedProperties)
-    , m_hasFontFaceOnlyValues(hasFontFaceOnlyValues)
+    , m_ruleType(ruleType)
     , m_inParseShorthand(0)
     , m_currentShorthand(CSSPropertyInvalid)
     , m_implicitShorthand(false)
@@ -350,13 +351,6 @@ inline PassRefPtrWillBeRawPtr<CSSPrimitiveValue> CSSPropertyParser::createPrimit
 {
     ASSERT(value->unit == CSSPrimitiveValue::CSS_STRING || value->unit == CSSPrimitiveValue::CSS_IDENT);
     return cssValuePool().createValue(value->string, CSSPrimitiveValue::CSS_STRING);
-}
-
-inline PassRefPtrWillBeRawPtr<CSSValue> CSSPropertyParser::createCSSImageValueWithReferrer(const String& rawValue, const KURL& url)
-{
-    RefPtrWillBeRawPtr<CSSValue> imageValue = CSSImageValue::create(rawValue, url);
-    toCSSImageValue(imageValue.get())->setReferrer(m_context.baseURL().strippedForUseAsReferrer());
-    return imageValue;
 }
 
 static inline bool isComma(CSSParserValue* value)
@@ -632,7 +626,7 @@ bool CSSPropertyParser::parseValue(CSSPropertyID propId, bool important)
             if (value->unit == CSSPrimitiveValue::CSS_URI) {
                 String uri = value->string;
                 if (!uri.isNull())
-                    image = createCSSImageValueWithReferrer(uri, completeURL(uri));
+                    image = CSSImageValue::create(uri, completeURL(uri));
             } else if (value->unit == CSSParserValue::Function && equalIgnoringCase(value->function->name, "-webkit-image-set(")) {
                 image = parseImageSet(m_valueList.get());
                 if (!image)
@@ -751,7 +745,7 @@ bool CSSPropertyParser::parseValue(CSSPropertyID propId, bool important)
             parsedValue = cssValuePool().createIdentifierValue(CSSValueNone);
             m_valueList->next();
         } else if (value->unit == CSSPrimitiveValue::CSS_URI) {
-            parsedValue = createCSSImageValueWithReferrer(value->string, completeURL(value->string));
+            parsedValue = CSSImageValue::create(value->string, completeURL(value->string));
             m_valueList->next();
         } else if (isGeneratedImageValue(value)) {
             if (parseGeneratedImage(m_valueList.get(), parsedValue))
@@ -2306,7 +2300,7 @@ bool CSSPropertyParser::parseContent(CSSPropertyID propId, bool important)
         RefPtrWillBeRawPtr<CSSValue> parsedValue = nullptr;
         if (val->unit == CSSPrimitiveValue::CSS_URI) {
             // url
-            parsedValue = createCSSImageValueWithReferrer(val->string, completeURL(val->string));
+            parsedValue = CSSImageValue::create(val->string, completeURL(val->string));
         } else if (val->unit == CSSParserValue::Function) {
             // attr(X) | counter(X [,Y]) | counters(X, Y, [,Z]) | -webkit-gradient(...)
             CSSParserValueList* args = val->function->args.get();
@@ -2410,7 +2404,7 @@ bool CSSPropertyParser::parseFillImage(CSSParserValueList* valueList, RefPtrWill
         return true;
     }
     if (valueList->current()->unit == CSSPrimitiveValue::CSS_URI) {
-        value = createCSSImageValueWithReferrer(valueList->current()->string, completeURL(valueList->current()->string));
+        value = CSSImageValue::create(valueList->current()->string, completeURL(valueList->current()->string));
         return true;
     }
 
@@ -4747,6 +4741,9 @@ bool CSSPropertyParser::parseFontVariant(bool important)
             if (val->id == CSSValueNormal || val->id == CSSValueSmallCaps)
                 parsedValue = cssValuePool().createIdentifierValue(val->id);
             else if (val->id == CSSValueAll && !values) {
+                // FIXME: CSSPropertyParser::parseFontVariant() implements
+                // the old css3 draft:
+                // http://www.w3.org/TR/2002/WD-css3-webfonts-20020802/#font-variant
                 // 'all' is only allowed in @font-face and with no other values. Make a value list to
                 // indicate that we are in the @font-face case.
                 values = CSSValueList::createCommaSeparated();
@@ -4772,7 +4769,8 @@ bool CSSPropertyParser::parseFontVariant(bool important)
     }
 
     if (values && values->length()) {
-        m_hasFontFaceOnlyValues = true;
+        if (m_ruleType != CSSRuleSourceData::FONT_FACE_RULE)
+            return false;
         addProperty(CSSPropertyFontVariant, values.release(), important);
         return true;
     }
@@ -4800,7 +4798,6 @@ bool CSSPropertyParser::parseFontWeight(bool important)
 bool CSSPropertyParser::parseFontFaceSrcURI(CSSValueList* valueList)
 {
     RefPtrWillBeRawPtr<CSSFontFaceSrcValue> uriValue(CSSFontFaceSrcValue::create(completeURL(m_valueList->current()->string)));
-    uriValue->setReferrer(m_context.baseURL().strippedForUseAsReferrer());
 
     CSSParserValue* value = m_valueList->next();
     if (!value) {
@@ -5896,7 +5893,7 @@ bool BorderImageParseContext::buildFromParser(CSSPropertyParser& parser, CSSProp
 
         if (!context.canAdvance() && context.allowImage()) {
             if (val->unit == CSSPrimitiveValue::CSS_URI) {
-                context.commitImage(parser.createCSSImageValueWithReferrer(val->string, parser.m_context.completeURL(val->string)));
+                context.commitImage(CSSImageValue::create(val->string, parser.m_context.completeURL(val->string)));
             } else if (isGeneratedImageValue(val)) {
                 RefPtrWillBeRawPtr<CSSValue> value = nullptr;
                 if (parser.parseGeneratedImage(parser.m_valueList.get(), value))
@@ -7184,7 +7181,7 @@ PassRefPtrWillBeRawPtr<CSSValue> CSSPropertyParser::parseImageSet(CSSParserValue
         if (arg->unit != CSSPrimitiveValue::CSS_URI)
             return nullptr;
 
-        RefPtrWillBeRawPtr<CSSValue> image = createCSSImageValueWithReferrer(arg->string, completeURL(arg->string));
+        RefPtrWillBeRawPtr<CSSImageValue> image = CSSImageValue::create(arg->string, completeURL(arg->string));
         imageSet->append(image);
 
         arg = functionArgs->next();

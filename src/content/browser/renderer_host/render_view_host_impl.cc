@@ -421,7 +421,7 @@ WebPreferences RenderViewHostImpl::GetWebkitPrefs(const GURL& url) {
       atoi(command_line.GetSwitchValueASCII(
       switches::kAcceleratedCanvas2dMSAASampleCount).c_str());
   prefs.deferred_filters_enabled =
-      !command_line.HasSwitch(switches::kDisableDeferredFilters);
+      command_line.HasSwitch(switches::kEnableDeferredFilters);
   prefs.container_culling_enabled =
       command_line.HasSwitch(switches::kEnableContainerCulling);
   prefs.lazy_layout_enabled =
@@ -1069,6 +1069,15 @@ void RenderViewHostImpl::Shutdown() {
       opener->increment_in_flight_event_count();
     }
     run_modal_opener_id_ = MSG_ROUTING_NONE;
+  }
+
+  // We can't release the SessionStorageNamespace until our peer
+  // in the renderer has wound down.
+  if (GetProcess()->HasConnection()) {
+    RenderProcessHostImpl::ReleaseOnCloseACK(
+        GetProcess(),
+        delegate_->GetSessionStorageNamespaceMap(),
+        GetRoutingID());
   }
 
   RenderWidgetHostImpl::Shutdown();

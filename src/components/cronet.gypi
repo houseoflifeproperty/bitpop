@@ -4,9 +4,8 @@
 
 {
   'conditions': [
-    ['OS=="android"', {
-      # TODO(mef): Consider moving all Cronet Android targets into separate
-      # file. Also figure out what needs to be done for gn script.
+    ['OS=="android" and use_icu_alternatives_on_android==1', {
+      # TODO(mef): Figure out what needs to be done for gn script.
       'targets': [
         {
           'target_name': 'cronet_jni_headers',
@@ -89,7 +88,17 @@
             '-landroid',
             '-Wl,--gc-sections',
             '-Wl,--exclude-libs,ALL'
-          ]
+          ],
+          'conditions': [
+            [ 'use_icu_alternatives_on_android == 1', {
+                'dependencies!': [
+                  '../base/base.gyp:base_i18n',
+                  '../third_party/icu/icu.gyp:icui18n',
+                  '../third_party/icu/icu.gyp:icuuc',
+                ]
+              },
+            ],
+          ],
         },
         {
           'target_name': 'cronet',
@@ -116,6 +125,13 @@
               'native_lib': 'libcronet.>(android_product_extension)',
               'java_lib': 'cronet.jar',
               'package_dir': '<(PRODUCT_DIR)/cronet',
+              'intermediate_dir': '<(SHARED_INTERMEDIATE_DIR)/cronet',
+              'jar_extract_dir': '<(intermediate_dir)/cronet_jar_extract',
+              'jar_excluded_classes': [
+                '*/BaseChromiumApp*.class',
+              ],
+              'jar_extract_stamp': '<(intermediate_dir)/jar_extract.stamp',
+              'cronet_jar_stamp': '<(intermediate_dir)/cronet_jar.stamp',
           },
           'actions': [
             {
@@ -130,14 +146,62 @@
                 '<@(_outputs)',
               ],
             },
-          ],
-          'copies': [
             {
-              'destination': '<(package_dir)/libs',
-              'files': [
+              'action_name': 'extracting from jars',
+              'inputs':  [
                 '<(PRODUCT_DIR)/lib.java/<(java_lib)',
                 '<(PRODUCT_DIR)/lib.java/base_java.jar',
                 '<(PRODUCT_DIR)/lib.java/net_java.jar',
+                '<(PRODUCT_DIR)/lib.java/url_java.jar',
+              ],
+              'outputs': ['<(jar_extract_stamp)', '<(jar_extract_dir)'],
+              'action': [
+                'python',
+                'cronet/tools/extract_from_jars.py',
+                '--classes-dir=<(jar_extract_dir)',
+                '--jars=<@(_inputs)',
+                '--stamp=<(jar_extract_stamp)',
+              ],
+            },
+            {
+              'action_name': 'jar_<(_target_name)',
+              'message': 'Creating <(_target_name) jar',
+              'inputs': [
+                '<(DEPTH)/build/android/gyp/util/build_utils.py',
+                '<(DEPTH)/build/android/gyp/util/md5_check.py',
+                '<(DEPTH)/build/android/gyp/jar.py',
+                '<(jar_extract_stamp)',
+              ],
+              'outputs': [
+                '<(package_dir)/<(java_lib)',
+                '<(cronet_jar_stamp)',
+              ],
+              'action': [
+                'python', '<(DEPTH)/build/android/gyp/jar.py',
+                '--classes-dir=<(jar_extract_dir)',
+                '--jar-path=<(package_dir)/<(java_lib)',
+                '--excluded-classes=<@(jar_excluded_classes)',
+                '--stamp=<(cronet_jar_stamp)',
+              ]
+            },
+            {
+              'action_name': 'generate licenses',
+              'inputs':  ['cronet/tools/cronet_licenses.py'] ,
+              'outputs': ['<(package_dir)/LICENSE'],
+              'action': [
+                'python',
+                '<@(_inputs)',
+                'license',
+                '<@(_outputs)',
+              ],
+            },
+          ],
+          'copies': [
+            {
+              'destination': '<(package_dir)',
+              'files': [
+                '../AUTHORS',
+                '../chrome/VERSION',
               ],
             },
           ],

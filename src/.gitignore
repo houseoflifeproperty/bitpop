@@ -38,10 +38,7 @@ v8.log
 /bitpop_specific/extensions/upload
 /chrome/browser/extensions/default_extensions/*.crx
 /native_client/toolchain
-/third_party/clang_format/bin/mac/clang-format
-/third_party/llvm
-/third_party/llvm_build
-/tools/gn/bin/mac/gn
+/third_party/llvm-build
 /build/Debug
 /build/Purify
 /build/Release

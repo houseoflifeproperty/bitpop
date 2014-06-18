@@ -603,10 +603,12 @@ void ContentViewCoreImpl::OnGestureEventAck(const blink::WebGestureEvent& event,
       Java_ContentViewCore_onPinchEndEventAck(env, j_obj.obj());
       break;
     case WebInputEvent::GestureTap:
-      if (ack_result != INPUT_EVENT_ACK_STATE_CONSUMED) {
-        Java_ContentViewCore_onTapEventNotConsumed(
-            env, j_obj.obj(), event.x * dpi_scale(), event.y * dpi_scale());
-      }
+      Java_ContentViewCore_onSingleTapEventAck(
+          env,
+          j_obj.obj(),
+          ack_result == INPUT_EVENT_ACK_STATE_CONSUMED,
+          event.x * dpi_scale(),
+          event.y * dpi_scale());
       break;
     case WebInputEvent::GestureDoubleTap:
       Java_ContentViewCore_onDoubleTapEventAck(env, j_obj.obj());
@@ -905,7 +907,8 @@ void ContentViewCoreImpl::LoadUrl(
     jbyteArray post_data,
     jstring base_url_for_data_url,
     jstring virtual_url_for_data_url,
-    jboolean can_load_local_resources) {
+    jboolean can_load_local_resources,
+    jboolean is_renderer_initiated) {
   DCHECK(url);
   NavigationController::LoadURLParams params(
       GURL(ConvertJavaStringToUTF8(env, url)));
@@ -943,6 +946,8 @@ void ContentViewCoreImpl::LoadUrl(
         GURL(ConvertJavaStringToUTF8(env, j_referrer_url)),
         static_cast<blink::WebReferrerPolicy>(referrer_policy));
   }
+
+  params.is_renderer_initiated = is_renderer_initiated;
 
   LoadUrl(params);
 }

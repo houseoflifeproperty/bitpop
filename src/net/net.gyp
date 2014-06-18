@@ -438,6 +438,23 @@
             ],
           },
         ],
+        [ 'use_icu_alternatives_on_android == 1', {
+            'dependencies!': [
+              '../base/base.gyp:base_i18n',
+              '../third_party/icu/icu.gyp:icui18n',
+              '../third_party/icu/icu.gyp:icuuc',
+            ],
+            'sources!': [
+              'base/filename_util_icu.cc',
+              'base/net_string_util_icu.cc',
+              'base/net_util_icu.cc',
+            ],
+            'sources': [
+              'base/net_string_util_icu_alternatives_android.cc',
+              'base/net_string_util_icu_alternatives_android.h',
+            ],
+          },
+        ],
       ],
       'target_conditions': [
         # These source files are excluded by default platform rules, but they
@@ -631,7 +648,10 @@
             ],
           },
         ],
-        [ 'use_v8_in_net==1', {
+        # Always need use_v8_in_net to be 1 to run gyp on Android, so just
+        # remove net_unittest's dependency on v8 when using icu alternatives
+        # instead of setting use_v8_in_net to 0.
+        [ 'use_v8_in_net==1 and use_icu_alternatives_on_android==0', {
             'dependencies': [
               'net_with_v8',
             ],
@@ -739,10 +759,22 @@
           },
         ],
         ['OS == "android" and gtest_target_type == "shared_library"', {
+          # TODO(mmenke):  This depends on test_support_base, which depends on
+          #                icu.  Figure out a way to remove that dependency.
           'dependencies': [
             '../testing/android/native_test.gyp:native_test_native_code',
           ]
         }],
+        [ 'use_icu_alternatives_on_android == 1', {
+            'dependencies!': [
+              '../base/base.gyp:base_i18n',
+            ],
+            'sources!': [
+              'base/filename_util_unittest.cc',
+              'base/net_util_icu_unittest.cc',
+            ],
+          },
+        ],
       ],
       'target_conditions': [
         # These source files are excluded by default platform rules, but they
@@ -813,6 +845,8 @@
       ],
       'export_dependent_settings': [
         '../base/base.gyp:base',
+        # TODO(mmenke):  This depends on icu, figure out a way to build tests
+        #                without icu.
         '../base/base.gyp:test_support_base',
         '../testing/gtest.gyp:gtest',
         '../testing/gmock.gyp:gmock',
@@ -1430,6 +1464,14 @@
             'jni_generator_ptr_type': 'long',
           },
           'includes': [ '../build/jni_generator.gypi' ],
+
+          'conditions': [
+            ['use_icu_alternatives_on_android==1', {
+              'sources': [
+                'android/java/src/org/chromium/net/NetStringUtil.java',
+              ],
+            }],
+          ],
         },
         {
           'target_name': 'net_test_jni_headers',

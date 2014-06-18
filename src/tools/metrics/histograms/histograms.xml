@@ -2675,6 +2675,26 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   </summary>
 </histogram>
 
+<histogram name="DataReductionProxy.BypassOnNetworkErrorFallback"
+    enum="NetErrorCodes">
+  <owner>bengr@chromium.org</owner>
+  <summary>
+    Positive net error code that caused the fallback data reduction proxy to be
+    bypassed and put on the proxy retry list. Called after a failure to connect
+    or resolve a host name.
+  </summary>
+</histogram>
+
+<histogram name="DataReductionProxy.BypassOnNetworkErrorPrimary"
+    enum="NetErrorCodes">
+  <owner>bengr@chromium.org</owner>
+  <summary>
+    Positive net error code that caused the primary data reduction proxy to be
+    bypassed and put on the proxy retry list. Called after a failure to connect
+    or resolve a host name.
+  </summary>
+</histogram>
+
 <histogram name="DataReductionProxy.ProbeURL"
     enum="DataReductionProxyProbeURLFetchResult">
   <owner>bengr@chromium.org</owner>
@@ -4775,6 +4795,16 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <summary>
     Events related to fetching, saving and loading DM server tokens. These are
     used to retrieve cloud policies.
+  </summary>
+</histogram>
+
+<histogram name="Enterprise.EnrolledPolicyHasDMToken" enum="Boolean">
+  <owner>tnagel@chromium.org</owner>
+  <summary>
+    Whether loading of device policy from file on an enterprise-enrolled
+    (checked against install_attributes.pb) Chrome OS device yields an
+    enterprise policy with a DM token.  Filled once during session startup,
+    after first successful device policy read.
   </summary>
 </histogram>
 
@@ -32026,6 +32056,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="2" label="Bypass due to internal server error"/>
   <int value="3" label="Bypass due to other error"/>
   <int value="4" label="Bypass due to missing via header"/>
+  <int value="5" label="Bypass due to 4xx response"/>
 </enum>
 
 <enum name="DataReductionProxyProbeURLFetchResult" type="int">
@@ -40409,6 +40440,7 @@ Therefore, the affected-histogram name has to have at least one dot in it.
   <int value="55" label="IDC_CONTENT_CONTEXT_SPELLING_TOGGLE"/>
   <int value="56" label="IDC_SPELLCHECK_LANGUAGES_FIRST"/>
   <int value="57" label="IDC_CONTENT_CONTEXT_SEARCHWEBFORIMAGE"/>
+  <int value="58" label="IDC_SPELLCHECK_SUGGESTION"/>
 </enum>
 
 <enum name="ResolutionCategory" type="int">

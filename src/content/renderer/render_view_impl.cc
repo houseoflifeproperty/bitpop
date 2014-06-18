@@ -3142,7 +3142,12 @@ void RenderViewImpl::OnResize(const ViewMsg_Resize_Params& params) {
     UpdateScrollState(webview()->mainFrame());
   }
 
+  gfx::Size old_visible_viewport_size = visible_viewport_size_;
+
   RenderWidget::OnResize(params);
+
+  if (old_visible_viewport_size != visible_viewport_size_)
+    has_scrolled_focused_editable_node_into_rect_ = false;
 }
 
 void RenderViewImpl::DidInitiatePaint() {
@@ -3307,12 +3312,19 @@ void RenderViewImpl::OnPluginImeCompositionCompleted(const base::string16& text,
 }
 #endif  // OS_MACOSX
 
+void RenderViewImpl::OnClose() {
+  if (closing_)
+    RenderThread::Get()->Send(new ViewHostMsg_Close_ACK(routing_id_));
+  RenderWidget::OnClose();
+}
+
 void RenderViewImpl::Close() {
   // We need to grab a pointer to the doomed WebView before we destroy it.
   WebView* doomed = webview();
   RenderWidget::Close();
   g_view_map.Get().erase(doomed);
   g_routing_id_view_map.Get().erase(routing_id_);
+  RenderThread::Get()->Send(new ViewHostMsg_Close_ACK(routing_id_));
 }
 
 void RenderViewImpl::DidHandleKeyEvent() {

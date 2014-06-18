@@ -828,7 +828,8 @@ public class ContentViewCore
                 params.mPostData,
                 params.mBaseUrlForDataUrl,
                 params.mVirtualUrlForDataUrl,
-                params.mCanLoadLocalResources);
+                params.mCanLoadLocalResources,
+                params.mIsRendererInitiated);
     }
 
     /**
@@ -1199,10 +1200,10 @@ public class ContentViewCore
 
     @SuppressWarnings("unused")
     @CalledByNative
-    private void onTapEventNotConsumed(int x, int y) {
+    private void onSingleTapEventAck(boolean consumed, int x, int y) {
         for (mGestureStateListenersIterator.rewind();
                 mGestureStateListenersIterator.hasNext();) {
-            mGestureStateListenersIterator.next().onUnhandledTapEvent(x, y);
+            mGestureStateListenersIterator.next().onSingleTap(consumed, x, y);
         }
     }
 
@@ -3090,7 +3091,8 @@ public class ContentViewCore
             byte[] postData,
             String baseUrlForDataUrl,
             String virtualUrlForDataUrl,
-            boolean canLoadLocalResources);
+            boolean canLoadLocalResources,
+            boolean isRendererInitiated);
 
     private native String nativeGetURL(long nativeContentViewCoreImpl);
 
